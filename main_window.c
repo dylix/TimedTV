@@ -1,0 +1,300 @@
+/*
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ * 
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Library General Public License for more details.
+ * 
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor Boston, MA 02110-1301,  USA
+ */
+ 
+#include <gtk/gtk.h>
+#include <gdk/gdkkeysyms.h>
+#include <pthread.h>
+#include <time.h>
+
+/*#include <cairo.h>*/
+/*#include <stdio.h>*/
+
+#include "version.h"
+
+static GtkWidget *entMin;
+static GtkWidget *chkMon;
+static int timerEnabled;
+static long currentTime, endTime;
+static pid_t pid;
+
+void show_about(GtkWidget *widget, gpointer data)
+{
+	gchar *license = 
+	"TimedTV is free software; you can redistribute it and/or modify\n"
+	"it under the terms of the GNU General Public License as published by\n"
+	"the Free Software Foundation; either version 2 of the License, or\n"
+	"(at your option) any later version.\n"
+	"\n"
+	"TimedTV is distributed in the hope that it will be useful,\n"
+	"but WITHOUT ANY WARRANTY; without even the implied warranty of\n"
+	"MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\n"
+	"GNU General Public License for more details.\n"
+	"\n"
+	"You should have received a copy of the GNU General Public License\n"
+	"along with Alarm Clock; if not, write to the Free Software Foundation,\n"
+	"Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA\n";
+
+	GdkPixbuf *pixbuf = gdk_pixbuf_new_from_file("tv.png", NULL);
+
+	GtkWidget *dialog = gtk_about_dialog_new();
+	gtk_window_set_position(GTK_ABOUT_DIALOG(dialog), GTK_WIN_POS_CENTER);
+	gtk_about_dialog_set_name(GTK_ABOUT_DIALOG(dialog), "TimedTV");
+	gtk_about_dialog_set_version(GTK_ABOUT_DIALOG(dialog), TIMEDTV_VERSION); 
+	gtk_about_dialog_set_copyright(GTK_ABOUT_DIALOG(dialog),  "\xc2\xa9 2010 Chris Hall <dylix98@gmail.com>");
+	gtk_about_dialog_set_comments(GTK_ABOUT_DIALOG(dialog), "TimedTV is a simple program for turning off TVTime & your monitors after a set amount of time.");
+	gtk_about_dialog_set_website(GTK_ABOUT_DIALOG(dialog), "http://plutonic.mine.nu/?page=misc");
+	gtk_about_dialog_set_license(GTK_ABOUT_DIALOG(dialog), license);
+	gtk_about_dialog_set_logo(GTK_ABOUT_DIALOG(dialog), pixbuf);
+	g_object_unref(pixbuf), pixbuf = NULL;
+	gtk_dialog_run(GTK_DIALOG (dialog));
+	gtk_widget_destroy(dialog);
+
+}
+
+GdkPixbuf *create_pixbuf(const gchar * filename)
+{
+   GdkPixbuf *pixbuf;
+   GError *error = NULL;
+   pixbuf = gdk_pixbuf_new_from_file(filename, &error);
+   if(!pixbuf) {
+      fprintf(stderr, "%s\n", error->message);
+      g_error_free(error);
+   }
+   return pixbuf;
+}
+static char buffer[256];
+
+static gboolean time_handler(GtkWidget *widget)
+{
+	if (widget->window == NULL) return FALSE;
+	
+	// Always keep currentTime current
+	currentTime= time(NULL);
+	
+	// If launch button has been clicked
+	if (timerEnabled==1)
+	{
+		if (currentTime > endTime)
+		{
+			/*	save for later. might make current/kill time visible on app
+			
+			time_t curtime;
+			struct tm *loctime;
+			curtime = time(NULL);
+			loctime = localtime(&curtime);
+			strftime(buffer, 256, "%T", loctime);
+			gtk_widget_queue_draw(widget);
+			*/
+
+			/* TRY TO CHECK IF TVTIME WAS KILLED BY USER
+			 
+			if (getpid()<0)
+			{
+				gtk_main_quit;
+			}
+			*/
+			
+			// Get ready to kill shit
+			kill(pid,SIGUSR1);
+			if (gtk_toggle_button_get_active (GTK_CHECK_BUTTON (chkMon))) 
+			{
+				system("xset dpms force off");
+			}
+			kill(getpid(),SIGUSR1);
+			
+		}
+	}
+	return TRUE;
+}
+
+
+ 
+void *myTimer(void *arg)
+{
+	// Launch button has been clicked
+	timerEnabled=1;
+	
+	// Ugly stuff to get number from spin button
+	GtkSpinButton *spin;
+	spin = GTK_SPIN_BUTTON(entMin);
+	int minutes = gtk_spin_button_get_value_as_int(spin);
+	
+	// Set endTime
+	time_t result;
+	result = time(NULL);
+	endTime = result+(minutes*60);
+}
+
+static void exec_tvtime(GtkWidget *widget, gpointer data)
+{      
+	// Thread, not sure why
+	pthread_t writer_id;
+	pthread_create (&writer_id, NULL, myTimer, NULL);
+	
+	// Create the fork
+	pid = fork();
+	if (pid == 0)
+	{
+		// This is the child process.  Execute the shell command.
+		execl("/usr/bin/tvtime","tvtime","-m", (char *)0);
+	}
+}
+
+int main( int argc, char *argv[])
+{
+
+	GtkWidget *launch;
+	GtkWidget *close;
+	//GtkWidget *darea;
+	GtkWidget *window;
+	GtkWidget *vbox;
+	GtkWidget *hbox;
+	GtkWidget *mainbox;
+	GtkWidget *halign;
+	GtkWidget *valign;
+	GtkWidget *separator;
+	GtkWidget *table;
+	GtkWidget *lblMin;
+	GtkWidget *lblMon;
+	GtkAdjustment *adj;
+	GtkWidget *menubar;
+	GtkWidget *filemenu;
+	GtkWidget *file;
+	GtkWidget *helpmenu;
+	GtkWidget *help;
+	GtkWidget *about;
+	GtkWidget *quit;
+	GtkAccelGroup *accel_group = NULL;
+
+
+	gtk_init(&argc, &argv);
+
+	window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+	gtk_window_set_position(GTK_WINDOW(window), GTK_WIN_POS_CENTER);
+	gtk_window_set_default_size(GTK_WINDOW(window), 250, 150);
+	gtk_window_set_title(GTK_WINDOW(window), "TimedTV");
+	gtk_window_set_icon(GTK_WINDOW(window), create_pixbuf("tv.png"));
+
+	// Setup window layout
+	vbox = gtk_vbox_new(FALSE, 0);
+	gtk_container_add(GTK_CONTAINER(window), vbox);
+
+	// Add Top Menu To Window
+	menubar = gtk_menu_bar_new();
+	filemenu = gtk_menu_new();
+	helpmenu = gtk_menu_new();
+	accel_group = gtk_accel_group_new();
+	gtk_window_add_accel_group(GTK_WINDOW(window), accel_group);
+	file = gtk_menu_item_new_with_mnemonic("_File");
+	quit = gtk_image_menu_item_new_from_stock(GTK_STOCK_QUIT, accel_group);
+	help = gtk_menu_item_new_with_mnemonic("_Help");
+	about = gtk_image_menu_item_new_from_stock(GTK_STOCK_ABOUT, NULL);
+	gtk_widget_add_accelerator(quit, "activate", accel_group, GDK_q, GDK_CONTROL_MASK, GTK_ACCEL_VISIBLE); 
+	gtk_menu_item_set_submenu(GTK_MENU_ITEM(file), filemenu);
+	gtk_menu_shell_append(GTK_MENU_SHELL(filemenu), quit);
+	gtk_menu_shell_append(GTK_MENU_SHELL(menubar), file);
+	gtk_menu_item_set_submenu(GTK_MENU_ITEM(help), helpmenu);
+	gtk_menu_shell_append(GTK_MENU_SHELL(helpmenu), about);
+	gtk_menu_shell_append(GTK_MENU_SHELL(menubar), help);
+	gtk_box_pack_start(GTK_BOX(vbox), menubar, FALSE, FALSE, 3);
+
+
+	// Main VBOX
+	mainbox = gtk_vbox_new(TRUE, 3);
+	gtk_container_add(GTK_CONTAINER(vbox), mainbox);
+	
+	// Setup table
+	table = gtk_table_new(3, 2, FALSE);
+	gtk_container_add(GTK_CONTAINER(mainbox), table);
+	
+	// Labels
+	lblMin = gtk_label_new("Minutes?");
+	gtk_misc_set_alignment(GTK_MISC(lblMin),0,1);
+	lblMon = gtk_label_new("Turn monitor off?");
+	gtk_misc_set_alignment(GTK_MISC(lblMon),0,1);
+	
+	// Add labels to table
+	gtk_table_attach(GTK_TABLE(table), lblMin, 0, 1, 0, 1, GTK_FILL | GTK_SHRINK, GTK_FILL | GTK_SHRINK, 5, 5);
+	gtk_table_attach(GTK_TABLE(table), lblMon, 0, 1, 1, 2, GTK_FILL | GTK_SHRINK, GTK_FILL | GTK_SHRINK, 5, 5);
+	
+	// Spinner, checkbox
+	adj = (GtkAdjustment *)gtk_adjustment_new(60.0, 0.0, 180.0, 5.0, 5.0, 0.0);
+	entMin = gtk_spin_button_new (adj, 0, 0);
+	gtk_spin_button_set_wrap(GTK_SPIN_BUTTON (entMin), TRUE);
+	chkMon = gtk_check_button_new_with_label("Yes");
+	gtk_toggle_button_set_active(GTK_CHECK_BUTTON(chkMon),TRUE);
+
+	// Add spinner, checkbox to table...
+	gtk_table_attach(GTK_TABLE(table), entMin, 1, 2, 0, 1, GTK_FILL | GTK_SHRINK, GTK_FILL | GTK_SHRINK, 5, 5);
+	gtk_table_attach(GTK_TABLE(table), chkMon, 1, 2, 1, 2, GTK_FILL | GTK_SHRINK, GTK_FILL | GTK_SHRINK, 5, 5);
+
+	
+	// Area to display current/kill date
+	//darea = gtk_drawing_area_new();
+	//gtk_container_add(GTK_CONTAINER (mainbox), darea);
+	
+	
+	//Add Horizontal Seperator
+	separator = gtk_hseparator_new ();
+	gtk_box_pack_start (GTK_BOX (vbox), separator, FALSE, TRUE, 5);
+
+
+	// Add Two Buttons on Bottom
+	hbox = gtk_hbox_new(TRUE, 3);
+	launch = gtk_button_new_with_label("Launch TvTime");
+	gtk_container_add(GTK_CONTAINER(hbox), launch);
+	//gtk_window_set_default(window, launch);
+	
+	close = gtk_button_new_with_label("Exit");
+	gtk_container_add(GTK_CONTAINER(hbox), close);
+	halign = gtk_alignment_new(.5,0, 0, 0);
+	gtk_container_add(GTK_CONTAINER(halign), hbox);
+	gtk_box_pack_start(GTK_BOX(vbox), halign, FALSE, FALSE, 5);
+
+	// TRY TO SET DEFAULTS
+	GTK_WIDGET_SET_FLAGS (launch, GTK_CAN_DEFAULT);
+	gtk_widget_grab_default (launch);
+	
+	// SIGNALS AND CALLBACKS
+	g_signal_connect_swapped(G_OBJECT(window), "destroy",
+	G_CALLBACK(gtk_main_quit), NULL);
+
+	g_signal_connect(G_OBJECT(quit), "activate",
+	G_CALLBACK(gtk_main_quit), NULL);
+	
+	g_signal_connect(G_OBJECT(about), "activate",
+	G_CALLBACK(show_about), NULL);
+	
+	g_signal_connect(G_OBJECT(close), "clicked",
+	G_CALLBACK(gtk_main_quit), NULL);
+	
+	g_signal_connect(G_OBJECT(launch), "clicked",
+	G_CALLBACK(exec_tvtime), NULL);
+
+    g_signal_connect (G_OBJECT (entMin), "activate",
+    G_CALLBACK (exec_tvtime), NULL); 
+                         
+	//g_signal_connect(darea, "expose-event",
+	//G_CALLBACK(on_expose_event), NULL);
+
+	g_timeout_add(1000, (GSourceFunc) time_handler, (gpointer) window);
+	gtk_widget_show_all(window);
+	time_handler(window);
+
+	gtk_main();
+
+	return 0;
+}
