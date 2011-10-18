@@ -1,8 +1,8 @@
 # basic GTK+ app makefile
 SOURCES = main_window.c
 OBJS    = ${SOURCES:.c=.o}
-CFLAGS  = `pkg-config gtk+-2.0 --cflags`
-LDADD   = `pkg-config gtk+-2.0 --libs`
+CFLAGS  = `pkg-config gtk+-3.0 --cflags`
+LDADD   = `pkg-config gtk+-3.0 --libs`
 CC      = gcc -pthread
 PACKAGE = timedtv
 
